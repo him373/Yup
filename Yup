@@ -1,0 +1,124 @@
+local ok, err = pcall(function()
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RS = game:GetService("ReplicatedStorage")
+
+local enabled = false
+local oldFireServer = nil
+local currentRemote = nil
+
+local function hookRemote(remote)
+    if currentRemote == remote then return end
+    currentRemote = remote
+
+    oldFireServer = hookfunction(remote.FireServer, function(self, ...)
+        if enabled and self == currentRemote then
+            local char = LocalPlayer.Character
+            local m1 = char and char:GetAttribute("CurrentM1") or 0
+            -- Fire "Up" on M1 3,4,5 to cover all possible last-hit timings
+            if m1 >= 3 then
+                return oldFireServer(self, "Up")
+            end
+        end
+        return oldFireServer(self, ...)
+    end)
+
+    print("[AutoUppercut] Hooked: " .. remote:GetFullName())
+end
+
+-- ── Find and hook the right service for current character ─────
+local function setupForChar(char)
+    task.wait(0.5)
+    local moveset = char:GetAttribute("Moveset")
+    if not moveset then
+        -- Wait for Moveset attribute
+        char:GetAttributeChangedSignal("Moveset"):Wait()
+        moveset = char:GetAttribute("Moveset")
+    end
+    if not moveset then print("[AutoUppercut] No Moveset found") return end
+
+    local services = RS.Knit.Knit.Services
+    local svc = services:FindFirstChild(moveset .. "Service")
+    if not svc then print("[AutoUppercut] Service not found: " .. moveset .. "Service") return end
+
+    local remote = svc.RE.Activated
+    hookRemote(remote)
+end
+
+-- Hook on spawn and respawn
+LocalPlayer.CharacterAdded:Connect(setupForChar)
+if LocalPlayer.Character then
+    task.spawn(setupForChar, LocalPlayer.Character)
+end
+
+-- ── GUI ───────────────────────────────────────────────────────
+local sg = Instance.new("ScreenGui")
+sg.Name = "AutoUppercutGUI"
+sg.ResetOnSpawn = false
+sg.Parent = LocalPlayer.PlayerGui
+
+local frame = Instance.new("Frame", sg)
+frame.Size = UDim2.new(0, 170, 0, 65)
+frame.Position = UDim2.new(0.5, -85, 0.5, -32)
+frame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+
+local stroke = Instance.new("UIStroke", frame)
+stroke.Color = Color3.fromRGB(80, 80, 200)
+stroke.Thickness = 1.5
+
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, 0, 0, 22)
+title.Position = UDim2.new(0, 0, 0, 5)
+title.BackgroundTransparency = 1
+title.Text = "AUTO UPPERCUT"
+title.TextColor3 = Color3.fromRGB(160, 160, 255)
+title.TextSize = 11
+title.Font = Enum.Font.GothamBold
+
+local btn = Instance.new("TextButton", frame)
+btn.Size = UDim2.new(0, 140, 0, 28)
+btn.Position = UDim2.new(0.5, -70, 0, 28)
+btn.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
+btn.TextColor3 = Color3.fromRGB(200, 200, 255)
+btn.Text = "UPPERCUT: OFF"
+btn.TextSize = 11
+btn.Font = Enum.Font.GothamBold
+btn.BorderSizePixel = 0
+Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+local ms = Instance.new("UIStroke", btn)
+ms.Color = Color3.fromRGB(60, 60, 150)
+ms.Thickness = 1
+
+btn.MouseButton1Click:Connect(function()
+    enabled = not enabled
+    if enabled then
+        btn.Text = "UPPERCUT: ON"
+        btn.BackgroundColor3 = Color3.fromRGB(20, 50, 20)
+        ms.Color = Color3.fromRGB(60, 200, 60)
+        title.TextColor3 = Color3.fromRGB(100, 255, 100)
+        stroke.Color = Color3.fromRGB(60, 200, 60)
+    else
+        btn.Text = "UPPERCUT: OFF"
+        btn.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
+        ms.Color = Color3.fromRGB(60, 60, 150)
+        title.TextColor3 = Color3.fromRGB(160, 160, 255)
+        stroke.Color = Color3.fromRGB(80, 80, 200)
+    end
+end)
+
+-- Re-hook if character switches moveset mid-game
+LocalPlayer.Character and LocalPlayer.Character:GetAttributeChangedSignal("Moveset"):Connect(function()
+    if LocalPlayer.Character then
+        task.spawn(setupForChar, LocalPlayer.Character)
+    end
+end)
+
+print("[AutoUppercut] Loaded — auto-detects all characters")
+
+end)
+if not ok then print("[AutoUppercut] ERROR: " .. tostring(err)) end
