@@ -12,17 +12,23 @@ local function hookRemote(remote)
     if currentRemote == remote then return end
     currentRemote = remote
 
+    -- Replace block start
+    if typeof(hookfunction) ~= "function" then
+        warn("[AutoUppercut] Your executor does not support hookfunction.")
+        return
+    end
+
     oldFireServer = hookfunction(remote.FireServer, function(self, ...)
         if enabled and self == currentRemote then
             local char = LocalPlayer.Character
             local m1 = char and char:GetAttribute("CurrentM1") or 0
-            -- Fire "Up" on M1 3,4,5 to cover all possible last-hit timings
             if m1 >= 3 then
                 return oldFireServer(self, "Up")
             end
         end
         return oldFireServer(self, ...)
     end)
+    -- Replace block end
 
     print("[AutoUppercut] Hooked: " .. remote:GetFullName())
 end
