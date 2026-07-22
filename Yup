@@ -1,130 +1,675 @@
-local ok, err = pcall(function()
+-- ==========================================
+-- TBO Tools - SIMPLE DESYNC (Remote Fire)
+-- ==========================================
 
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
-local RS = game:GetService("ReplicatedStorage")
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-local enabled = false
-local oldFireServer = nil
-local currentRemote = nil
+if PlayerGui:FindFirstChild("MainGUI") then
+    PlayerGui:FindFirstChild("MainGUI"):Destroy()
+end
 
-local function hookRemote(remote)
-    if currentRemote == remote then return end
-    currentRemote = remote
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "MainGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = PlayerGui
 
-    -- Replace block start
-    if typeof(hookfunction) ~= "function" then
-        warn("[AutoUppercut] Your executor does not support hookfunction.")
-        return
+-- ==========================================
+-- GUI (unchanged)
+-- ==========================================
+
+local OpenBtn = Instance.new("TextButton")
+OpenBtn.Size = UDim2.new(0, 55, 0, 55)
+OpenBtn.Position = UDim2.new(0, 12, 0.5, -27)
+OpenBtn.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
+OpenBtn.BorderSizePixel = 0
+OpenBtn.Text = "☰"
+OpenBtn.TextSize = 24
+OpenBtn.Font = Enum.Font.GothamBold
+OpenBtn.TextColor3 = Color3.fromRGB(200, 200, 255)
+OpenBtn.ZIndex = 10
+OpenBtn.Parent = ScreenGui
+Instance.new("UICorner", OpenBtn).CornerRadius = UDim.new(0, 14)
+local OpenStroke = Instance.new("UIStroke", OpenBtn)
+OpenStroke.Color = Color3.fromRGB(80, 80, 200)
+OpenStroke.Thickness = 2
+
+local Main = Instance.new("Frame")
+Main.Size = UDim2.new(0, 225, 0, 420)
+Main.Position = UDim2.new(0, 75, 0.5, -210)
+Main.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
+Main.BorderSizePixel = 0
+Main.Visible = false
+Main.ZIndex = 5
+Main.Parent = ScreenGui
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 16)
+local MainStroke = Instance.new("UIStroke", Main)
+MainStroke.Color = Color3.fromRGB(60, 60, 180)
+MainStroke.Thickness = 1.5
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 42)
+Title.BackgroundColor3 = Color3.fromRGB(18, 18, 40)
+Title.BorderSizePixel = 0
+Title.Text = "⚡  TBO Tools"
+Title.TextSize = 15
+Title.Font = Enum.Font.GothamBold
+Title.TextColor3 = Color3.fromRGB(160, 160, 255)
+Title.ZIndex = 6
+Title.Parent = Main
+Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 16)
+
+local function makeToggleBtn(parent, yPos, label, emoji, colorOn, colorOff)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -16, 0, 52)
+    frame.Position = UDim2.new(0, 8, 0, yPos)
+    frame.BackgroundColor3 = Color3.fromRGB(16, 16, 32)
+    frame.BorderSizePixel = 0
+    frame.ZIndex = 6
+    frame.Parent = parent
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.6, 0, 1, 0)
+    lbl.Position = UDim2.new(0, 10, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = emoji .. "  " .. label
+    lbl.TextSize = 13
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextColor3 = Color3.fromRGB(200, 200, 255)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.ZIndex = 7
+    lbl.Parent = frame
+
+    local toggleBG = Instance.new("Frame")
+    toggleBG.Size = UDim2.new(0, 50, 0, 26)
+    toggleBG.Position = UDim2.new(1, -60, 0.5, -13)
+    toggleBG.BackgroundColor3 = colorOff
+    toggleBG.BorderSizePixel = 0
+    toggleBG.ZIndex = 7
+    toggleBG.Parent = frame
+    Instance.new("UICorner", toggleBG).CornerRadius = UDim.new(1, 0)
+
+    local circle = Instance.new("Frame")
+    circle.Size = UDim2.new(0, 20, 0, 20)
+    circle.Position = UDim2.new(0, 3, 0.5, -10)
+    circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    circle.BorderSizePixel = 0
+    circle.ZIndex = 8
+    circle.Parent = toggleBG
+    Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.ZIndex = 9
+    btn.Parent = frame
+
+    local function setOn(state)
+        TweenService:Create(circle, TweenInfo.new(0.2), {
+            Position = state and UDim2.new(1, -23, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
+        }):Play()
+        TweenService:Create(toggleBG, TweenInfo.new(0.2), {
+            BackgroundColor3 = state and colorOn or colorOff
+        }):Play()
     end
 
-    oldFireServer = hookfunction(remote.FireServer, function(self, ...)
-        if enabled and self == currentRemote then
-            local char = LocalPlayer.Character
-            local m1 = char and char:GetAttribute("CurrentM1") or 0
-            if m1 >= 3 then
-                return oldFireServer(self, "Up")
+    return btn, setOn, frame
+end
+
+local invisBtn,    setInvisOn,    _ = makeToggleBtn(Main,  50, "Invisible",   "👻", Color3.fromRGB(80,80,220),  Color3.fromRGB(50,50,50))
+local noclipBtn,   setNoclipOn,   _ = makeToggleBtn(Main, 110, "Noclip",      "👟", Color3.fromRGB(160,80,220), Color3.fromRGB(50,50,50))
+local tpBypassBtn, setTPBypassOn, _ = makeToggleBtn(Main, 170, "TP Bypass",   "⚡", Color3.fromRGB(80,180,80),  Color3.fromRGB(50,50,50))
+local tpSelBtn,    setTPSelOn,    _ = makeToggleBtn(Main, 230, "TP Selected", "🎯", Color3.fromRGB(200,140,0),  Color3.fromRGB(50,50,50))
+local tpLoopBtn,   setTPLoopOn,   _ = makeToggleBtn(Main, 290, "TP All Loop", "🔁", Color3.fromRGB(180,50,50),  Color3.fromRGB(50,50,50))
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(1, -16, 0, 28)
+StatusLabel.Position = UDim2.new(0, 8, 0, 355)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = "●  Ready"
+StatusLabel.TextSize = 12
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.TextColor3 = Color3.fromRGB(100, 200, 100)
+StatusLabel.ZIndex = 6
+StatusLabel.Parent = Main
+
+local DelayLabel = Instance.new("TextLabel")
+DelayLabel.Size = UDim2.new(1, -16, 0, 24)
+DelayLabel.Position = UDim2.new(0, 8, 0, 388)
+DelayLabel.BackgroundTransparency = 1
+DelayLabel.Text = "⚡  Heartbeat TP  |  Max Speed"
+DelayLabel.TextSize = 11
+DelayLabel.Font = Enum.Font.Gotham
+DelayLabel.TextColor3 = Color3.fromRGB(120, 120, 180)
+DelayLabel.ZIndex = 6
+DelayLabel.Parent = Main
+
+local function setStatus(msg, color)
+    StatusLabel.Text = msg
+    StatusLabel.TextColor3 = color or Color3.fromRGB(100, 200, 100)
+end
+
+-- ==========================================
+-- Player Panel
+-- ==========================================
+
+local PlayerPanel = Instance.new("Frame")
+PlayerPanel.Size = UDim2.new(0, 190, 0, 280)
+PlayerPanel.Position = UDim2.new(0, 240, 0.5, -140)
+PlayerPanel.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
+PlayerPanel.BorderSizePixel = 0
+PlayerPanel.Visible = false
+PlayerPanel.ZIndex = 20
+PlayerPanel.Parent = ScreenGui
+Instance.new("UICorner", PlayerPanel).CornerRadius = UDim.new(0, 14)
+local PanelStroke = Instance.new("UIStroke", PlayerPanel)
+PanelStroke.Color = Color3.fromRGB(200, 140, 0)
+PanelStroke.Thickness = 1.5
+
+local PanelTitle = Instance.new("TextLabel")
+PanelTitle.Size = UDim2.new(1, -36, 0, 36)
+PanelTitle.BackgroundColor3 = Color3.fromRGB(18, 18, 40)
+PanelTitle.BorderSizePixel = 0
+PanelTitle.Text = "Pick Player"
+PanelTitle.TextSize = 13
+PanelTitle.Font = Enum.Font.GothamBold
+PanelTitle.TextColor3 = Color3.fromRGB(200, 140, 0)
+PanelTitle.ZIndex = 21
+PanelTitle.Parent = PlayerPanel
+Instance.new("UICorner", PanelTitle).CornerRadius = UDim.new(0, 14)
+
+local PanelClose = Instance.new("TextButton")
+PanelClose.Size = UDim2.new(0, 30, 0, 30)
+PanelClose.Position = UDim2.new(1, -34, 0, 3)
+PanelClose.BackgroundColor3 = Color3.fromRGB(170, 40, 40)
+PanelClose.Text = "X"
+PanelClose.TextSize = 13
+PanelClose.Font = Enum.Font.GothamBold
+PanelClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+PanelClose.BorderSizePixel = 0
+PanelClose.ZIndex = 22
+PanelClose.Parent = PlayerPanel
+Instance.new("UICorner", PanelClose).CornerRadius = UDim.new(0, 8)
+
+local PlayerScroll = Instance.new("ScrollingFrame")
+PlayerScroll.Size = UDim2.new(1, -10, 1, -44)
+PlayerScroll.Position = UDim2.new(0, 5, 0, 40)
+PlayerScroll.BackgroundTransparency = 1
+PlayerScroll.BorderSizePixel = 0
+PlayerScroll.ScrollBarThickness = 3
+PlayerScroll.ScrollBarImageColor3 = Color3.fromRGB(200, 140, 0)
+PlayerScroll.ZIndex = 21
+PlayerScroll.Parent = PlayerPanel
+local PlayerListLayout = Instance.new("UIListLayout")
+PlayerListLayout.SortOrder = Enum.SortOrder.Name
+PlayerListLayout.Padding = UDim.new(0, 4)
+PlayerListLayout.Parent = PlayerScroll
+
+local guiOpen = false
+local panelOpen = false
+
+local function closePanel()
+    panelOpen = false
+    PlayerPanel.Visible = false
+end
+
+local function openGUI()
+    guiOpen = true
+    Main.Visible = true
+    Main.Size = UDim2.new(0, 0, 0, 0)
+    Main.Position = UDim2.new(0, 45, 0.5, 0)
+    TweenService:Create(Main, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 225, 0, 420),
+        Position = UDim2.new(0, 75, 0.5, -210)
+    }):Play()
+    OpenBtn.Text = "X"
+    OpenStroke.Color = Color3.fromRGB(200, 60, 60)
+end
+
+local function closeGUI()
+    guiOpen = false
+    closePanel()
+    local t = TweenService:Create(Main, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 0, 0, 0),
+        Position = UDim2.new(0, 45, 0.5, 0)
+    })
+    t:Play()
+    t.Completed:Connect(function() Main.Visible = false end)
+    OpenBtn.Text = "☰"
+    OpenStroke.Color = Color3.fromRGB(80, 80, 200)
+end
+
+OpenBtn.MouseButton1Click:Connect(function()
+    if guiOpen then closeGUI() else openGUI() end
+end)
+
+-- ==========================================
+-- Noclip
+-- ==========================================
+
+local isNoclip = false
+local noclipConn = nil
+
+local function enableNoclip()
+    if isNoclip then return end
+    isNoclip = true
+    setNoclipOn(true)
+    noclipConn = RunService.Stepped:Connect(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = false end
+        end
+    end)
+end
+
+local function disableNoclip()
+    if not isNoclip then return end
+    isNoclip = false
+    setNoclipOn(false)
+    if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
+    local char = LocalPlayer.Character
+    if char then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = true end
+        end
+    end
+end
+
+noclipBtn.MouseButton1Click:Connect(function()
+    if isNoclip then
+        disableNoclip()
+        setStatus("Noclip OFF", Color3.fromRGB(100, 200, 100))
+    else
+        enableNoclip()
+        setStatus("Noclip ON", Color3.fromRGB(160, 80, 255))
+    end
+end)
+
+-- ==========================================
+-- Invisible
+-- ==========================================
+
+local isInvisible = false
+local invisLoopConn = nil
+
+local function makeInvisible()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+        hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+    end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            pcall(function() part.Transparency = 1 end)
+            part.LocalTransparencyModifier = 1
+        end
+        if part:IsA("Decal") or part:IsA("Texture") then
+            pcall(function() part.Transparency = 1 end)
+        end
+    end
+    invisLoopConn = RunService.RenderStepped:Connect(function()
+        local c = LocalPlayer.Character
+        if not c or not isInvisible then return end
+        for _, part in ipairs(c:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.LocalTransparencyModifier = 1
+                pcall(function() part.Transparency = 1 end)
+            end
+            if part:IsA("Decal") or part:IsA("Texture") then
+                pcall(function() part.Transparency = 1 end)
             end
         end
-        return oldFireServer(self, ...)
     end)
-    -- Replace block end
-
-    print("[AutoUppercut] Hooked: " .. remote:GetFullName())
 end
 
--- ── Find and hook the right service for current character ─────
-local function setupForChar(char)
-    task.wait(0.5)
-    local moveset = char:GetAttribute("Moveset")
-    if not moveset then
-        -- Wait for Moveset attribute
-        char:GetAttributeChangedSignal("Moveset"):Wait()
-        moveset = char:GetAttribute("Moveset")
+local function makeVisible()
+    if invisLoopConn then invisLoopConn:Disconnect(); invisLoopConn = nil end
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.LocalTransparencyModifier = 0
+            pcall(function() part.Transparency = 0 end)
+        end
+        if part:IsA("Decal") or part:IsA("Texture") then
+            pcall(function() part.Transparency = 0 end)
+        end
     end
-    if not moveset then print("[AutoUppercut] No Moveset found") return end
-
-    local services = RS.Knit.Knit.Services
-    local svc = services:FindFirstChild(moveset .. "Service")
-    if not svc then print("[AutoUppercut] Service not found: " .. moveset .. "Service") return end
-
-    local remote = svc.RE.Activated
-    hookRemote(remote)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.Automatic
+        hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.DisplayWhenDamaged
+    end
 end
 
--- Hook on spawn and respawn
-LocalPlayer.CharacterAdded:Connect(setupForChar)
-if LocalPlayer.Character then
-    task.spawn(setupForChar, LocalPlayer.Character)
-end
-
--- ── GUI ───────────────────────────────────────────────────────
-local sg = Instance.new("ScreenGui")
-sg.Name = "AutoUppercutGUI"
-sg.ResetOnSpawn = false
-sg.Parent = LocalPlayer.PlayerGui
-
-local frame = Instance.new("Frame", sg)
-frame.Size = UDim2.new(0, 170, 0, 65)
-frame.Position = UDim2.new(0.5, -85, 0.5, -32)
-frame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
-frame.BorderSizePixel = 0
-frame.Active = true
-frame.Draggable = true
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
-
-local stroke = Instance.new("UIStroke", frame)
-stroke.Color = Color3.fromRGB(80, 80, 200)
-stroke.Thickness = 1.5
-
-local title = Instance.new("TextLabel", frame)
-title.Size = UDim2.new(1, 0, 0, 22)
-title.Position = UDim2.new(0, 0, 0, 5)
-title.BackgroundTransparency = 1
-title.Text = "AUTO UPPERCUT"
-title.TextColor3 = Color3.fromRGB(160, 160, 255)
-title.TextSize = 11
-title.Font = Enum.Font.GothamBold
-
-local btn = Instance.new("TextButton", frame)
-btn.Size = UDim2.new(0, 140, 0, 28)
-btn.Position = UDim2.new(0.5, -70, 0, 28)
-btn.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
-btn.TextColor3 = Color3.fromRGB(200, 200, 255)
-btn.Text = "UPPERCUT: OFF"
-btn.TextSize = 11
-btn.Font = Enum.Font.GothamBold
-btn.BorderSizePixel = 0
-Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-local ms = Instance.new("UIStroke", btn)
-ms.Color = Color3.fromRGB(60, 60, 150)
-ms.Thickness = 1
-
-btn.MouseButton1Click:Connect(function()
-    enabled = not enabled
-    if enabled then
-        btn.Text = "UPPERCUT: ON"
-        btn.BackgroundColor3 = Color3.fromRGB(20, 50, 20)
-        ms.Color = Color3.fromRGB(60, 200, 60)
-        title.TextColor3 = Color3.fromRGB(100, 255, 100)
-        stroke.Color = Color3.fromRGB(60, 200, 60)
+invisBtn.MouseButton1Click:Connect(function()
+    local char = LocalPlayer.Character
+    if not char then return end
+    isInvisible = not isInvisible
+    setInvisOn(isInvisible)
+    if isInvisible then
+        makeInvisible()
+        enableNoclip()
+        setStatus("Invisible + Noclip ON", Color3.fromRGB(150, 150, 255))
     else
-        btn.Text = "UPPERCUT: OFF"
-        btn.BackgroundColor3 = Color3.fromRGB(25, 25, 45)
-        ms.Color = Color3.fromRGB(60, 60, 150)
-        title.TextColor3 = Color3.fromRGB(160, 160, 255)
-        stroke.Color = Color3.fromRGB(80, 80, 200)
+        makeVisible()
+        disableNoclip()
+        setStatus("Visible + Noclip OFF", Color3.fromRGB(100, 200, 100))
     end
 end)
 
--- Re-hook if character switches moveset mid-game
-LocalPlayer.Character and LocalPlayer.Character:GetAttributeChangedSignal("Moveset"):Connect(function()
-    if LocalPlayer.Character then
-        task.spawn(setupForChar, LocalPlayer.Character)
+-- ==========================================
+-- TP Bypass (BodyVelocity only)
+-- ==========================================
+
+local bodyVelocity, antistuffConn = nil, nil
+local tpBypassOn = false
+
+local function antistuff()
+    if bodyVelocity then bodyVelocity:Destroy() end
+    if antistuffConn then antistuffConn:Disconnect() end
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(9e9, 0, 9e9)
+    bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    bodyVelocity.Parent = hrp
+    antistuffConn = RunService.Heartbeat:Connect(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum and bodyVelocity then
+            local md = hum.MoveDirection
+            bodyVelocity.Velocity = md.Magnitude > 0
+                and Vector3.new(md.X, 0, md.Z) * 22
+                or Vector3.new(0, 0, 0)
+        end
+    end)
+end
+
+local function unantistuff()
+    if bodyVelocity then bodyVelocity:Destroy(); bodyVelocity = nil end
+    if antistuffConn then antistuffConn:Disconnect(); antistuffConn = nil end
+end
+
+tpBypassBtn.MouseButton1Click:Connect(function()
+    tpBypassOn = not tpBypassOn
+    setTPBypassOn(tpBypassOn)
+    if tpBypassOn then
+        antistuff()
+        setStatus("⚡  TP Bypass ON", Color3.fromRGB(100, 220, 100))
+    else
+        unantistuff()
+        setStatus("⚡  TP Bypass OFF", Color3.fromRGB(200, 100, 100))
     end
 end)
 
-print("[AutoUppercut] Loaded — auto-detects all characters")
+-- ==========================================
+-- SIMPLE DESYNC (Remote Fire)
+-- ==========================================
 
+local function resetChar()
+    workspace.FallenPartsDestroyHeight = -150
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hrp then
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+    end
+    if hum then hum:ChangeState(Enum.HumanoidStateType.GettingUp) end
+end
+
+local function isAlive(player)
+    if not player.Character then return false end
+    local hum = player.Character:FindFirstChildOfClass("Humanoid")
+    return hum ~= nil and hum.Health > 0
+end
+
+-- Fire all Activated/RightActivated/Hitbox remotes with target Humanoid
+local function fireAllRemotes(targetHum)
+    local services = ReplicatedStorage:FindFirstChild("Knit") and ReplicatedStorage.Knit:FindFirstChild("Knit") and ReplicatedStorage.Knit.Knit:FindFirstChild("Services")
+    if not services then return end
+
+    for _, svc in ipairs(services:GetChildren()) do
+        local re = svc:FindFirstChild("RE")
+        if re then
+            for _, child in ipairs(re:GetChildren()) do
+                if child:IsA("RemoteEvent") and (child.Name:match("Activated") or child.Name:match("RightActivated") or child.Name:match("Hitbox") or child.Name:match("Fire")) then
+                    pcall(function()
+                        child:FireServer(targetHum)
+                    end)
+                end
+            end
+        end
+    end
+end
+
+local function tpTo(hrp, tHRP, tHum)
+    local predicted = tHRP.Position + (tHum.MoveDirection * 0.8 * tHum.WalkSpeed)
+    local dest = CFrame.new(predicted - tHRP.CFrame.LookVector * 5, predicted)
+    local oldPos = hrp.Position
+
+    if tpBypassOn then unantistuff() end
+
+    workspace.FallenPartsDestroyHeight = 100
+    hrp.CFrame = dest
+
+    local disp = dest.Position - oldPos
+    if disp.Magnitude > 0.5 then
+        hrp.AssemblyLinearVelocity = disp * 60
+    end
+
+    -- Fire all relevant remotes with target Humanoid
+    local targetHum = tHRP.Parent and tHRP.Parent:FindFirstChildOfClass("Humanoid")
+    if targetHum then
+        fireAllRemotes(targetHum)
+    end
+
+    RunService.Heartbeat:Wait()
+
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.AssemblyLinearVelocity = Vector3.new(math.random(-1,1), 0, math.random(-1,1))
+    if tpBypassOn then
+        task.wait(0.05)
+        antistuff()
+    end
+    workspace.FallenPartsDestroyHeight = -150
+end
+
+local function getSortedPlayers()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local alive, dead = {}, {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            if isAlive(p) then table.insert(alive, p)
+            else table.insert(dead, p) end
+        end
+    end
+    if hrp then
+        table.sort(alive, function(a, b)
+            local aH = a.Character and a.Character:FindFirstChild("HumanoidRootPart")
+            local bH = b.Character and b.Character:FindFirstChild("HumanoidRootPart")
+            if not aH then return false end
+            if not bH then return true end
+            return (hrp.Position - aH.Position).Magnitude < (hrp.Position - bH.Position).Magnitude
+        end)
+    end
+    return alive, dead
+end
+
+-- ==========================================
+-- TP Selected - Heartbeat loop
+-- ==========================================
+
+local tpSelOn = false
+local tpSelConn = nil
+local selectedPlayer = nil
+
+local function stopSelLoop()
+    tpSelOn = false
+    if tpSelConn then tpSelConn:Disconnect(); tpSelConn = nil end
+    selectedPlayer = nil
+    setTPSelOn(false)
+    if not tpBypassOn then unantistuff() end
+    workspace.FallenPartsDestroyHeight = -150
+    resetChar()
+end
+
+local function openPanel()
+    panelOpen = true
+    PlayerPanel.Visible = true
+    for _, c in ipairs(PlayerScroll:GetChildren()) do
+        if c:IsA("TextButton") then c:Destroy() end
+    end
+    local count = 0
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local alive = isAlive(p)
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, 0, 0, 38)
+            btn.BackgroundColor3 = Color3.fromRGB(16, 16, 32)
+            btn.BorderSizePixel = 0
+            btn.Text = (alive and "[A] " or "[D] ") .. p.Name
+            btn.TextSize = 12
+            btn.Font = Enum.Font.GothamBold
+            btn.TextColor3 = alive and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(255, 100, 100)
+            btn.ZIndex = 22
+            btn.Parent = PlayerScroll
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+            btn.MouseButton1Click:Connect(function()
+                selectedPlayer = p
+                closePanel()
+                if tpSelConn then tpSelConn:Disconnect(); tpSelConn = nil end
+                tpSelOn = true
+                setTPSelOn(true)
+                if not tpBypassOn then antistuff() end
+                setStatus("TP -> " .. p.Name, Color3.fromRGB(255, 180, 80))
+                tpSelConn = RunService.Heartbeat:Connect(function()
+                    if not tpSelOn then return end
+                    local char = LocalPlayer.Character
+                    if not char then return end
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then return end
+                    local tChar = selectedPlayer and selectedPlayer.Character
+                    if not tChar then return end
+                    local tHRP = tChar:FindFirstChild("HumanoidRootPart")
+                    local tHum = tChar:FindFirstChildOfClass("Humanoid")
+                    if not tHRP or not tHum then return end
+                    tpTo(hrp, tHRP, tHum)
+                end)
+            end)
+            count = count + 1
+        end
+    end
+    PlayerScroll.CanvasSize = UDim2.new(0, 0, 0, count * 42)
+end
+
+PanelClose.MouseButton1Click:Connect(function() closePanel() end)
+
+tpSelBtn.MouseButton1Click:Connect(function()
+    if tpSelOn then
+        stopSelLoop()
+        setStatus("TP Selected OFF", Color3.fromRGB(150, 150, 150))
+    else
+        if panelOpen then closePanel() else openPanel() end
+    end
 end)
-if not ok then print("[AutoUppercut] ERROR: " .. tostring(err)) end
+
+-- ==========================================
+-- TP All Loop - Heartbeat loop
+-- ==========================================
+
+local tpLoopOn = false
+local tpLoopConn = nil
+
+tpLoopBtn.MouseButton1Click:Connect(function()
+    tpLoopOn = not tpLoopOn
+    setTPLoopOn(tpLoopOn)
+    if tpLoopOn then
+        if not tpBypassOn then antistuff() end
+        setStatus("🔁  TP Loop ON (Simple)", Color3.fromRGB(255, 80, 80))
+        if tpLoopConn then tpLoopConn:Disconnect(); tpLoopConn = nil end
+
+        local index = 1
+        local cached = {}
+        local refreshTimer = 0
+
+        tpLoopConn = RunService.Heartbeat:Connect(function(dt)
+            if not tpLoopOn then return end
+            local char = LocalPlayer.Character
+            if not char then return end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+
+            refreshTimer = refreshTimer + dt
+            if refreshTimer >= 0.5 or #cached == 0 then
+                refreshTimer = 0
+                local alive, dead = getSortedPlayers()
+                cached = #alive > 0 and alive or dead
+                if index > #cached then index = 1 end
+            end
+
+            if #cached == 0 then return end
+            if index > #cached then index = 1 end
+
+            local target = cached[index]
+            local tChar = target and target.Character
+            if tChar then
+                local tHRP = tChar:FindFirstChild("HumanoidRootPart")
+                local tHum = tChar:FindFirstChildOfClass("Humanoid")
+                if tHRP and tHum then
+                    tpTo(hrp, tHRP, tHum)
+                    local tag = isAlive(target) and "[A]" or "[D]"
+                    setStatus("🔁 " .. tag .. " " .. target.Name, Color3.fromRGB(255, 100, 100))
+                end
+            end
+
+            index = index + 1
+        end)
+    else
+        if tpLoopConn then tpLoopConn:Disconnect(); tpLoopConn = nil end
+        if not tpBypassOn then unantistuff() end
+        workspace.FallenPartsDestroyHeight = -150
+        resetChar()
+        setStatus("🔁  TP Loop OFF", Color3.fromRGB(150, 150, 150))
+    end
+end)
+
+-- ==========================================
+-- Reset on Respawn
+-- ==========================================
+
+LocalPlayer.CharacterAdded:Connect(function()
+    isInvisible = false
+    isNoclip = false
+    if invisLoopConn then invisLoopConn:Disconnect(); invisLoopConn = nil end
+    if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
+    unantistuff()
+    setInvisOn(false)
+    setNoclipOn(false)
+    closePanel()
+    tpSelOn = false
+    if tpSelConn then tpSelConn:Disconnect(); tpSelConn = nil end
+    tpLoopOn = false
+    if tpLoopConn then tpLoopConn:Disconnect(); tpLoopConn = nil end
+    selectedPlayer = nil
+    setTPSelOn(false)
+    setTPLoopOn(false)
+    workspace.FallenPartsDestroyHeight = -150
+    if tpBypassOn then task.wait(1); antistuff() end
+    setStatus("● Respawned", Color3.fromRGB(100, 200, 100))
+end)
+
+print("TBO Tools loaded! (Simple Remote Fire)")
