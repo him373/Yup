@@ -1,5 +1,5 @@
 -- ==========================================
--- TBO Tools - SIMPLE DESYNC (Remote Fire)
+-- TBO Tools - RAKNET DESYNC v2 (with delay & cue)
 -- ==========================================
 
 local Players = game:GetService("Players")
@@ -19,7 +19,7 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = PlayerGui
 
 -- ==========================================
--- GUI (unchanged)
+-- GUI
 -- ==========================================
 
 local OpenBtn = Instance.new("TextButton")
@@ -368,14 +368,15 @@ invisBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- TP Bypass (BodyVelocity only)
+-- TP Bypass (Original antistuff)
 -- ==========================================
 
-local bodyVelocity, antistuffConn = nil, nil
+local bodyVelocity, bodyGyro, antistuffConn = nil, nil, nil
 local tpBypassOn = false
 
 local function antistuff()
     if bodyVelocity then bodyVelocity:Destroy() end
+    if bodyGyro then bodyGyro:Destroy() end
     if antistuffConn then antistuffConn:Disconnect() end
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
@@ -383,6 +384,11 @@ local function antistuff()
     bodyVelocity.MaxForce = Vector3.new(9e9, 0, 9e9)
     bodyVelocity.Velocity = Vector3.new(0, 0, 0)
     bodyVelocity.Parent = hrp
+    bodyGyro = Instance.new("BodyGyro")
+    bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    bodyGyro.P = 0
+    bodyGyro.D = 50
+    bodyGyro.Parent = hrp
     antistuffConn = RunService.Heartbeat:Connect(function()
         local char = LocalPlayer.Character
         if not char then return end
@@ -398,6 +404,7 @@ end
 
 local function unantistuff()
     if bodyVelocity then bodyVelocity:Destroy(); bodyVelocity = nil end
+    if bodyGyro then bodyGyro:Destroy(); bodyGyro = nil end
     if antistuffConn then antistuffConn:Disconnect(); antistuffConn = nil end
 end
 
@@ -414,7 +421,7 @@ tpBypassBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- SIMPLE DESYNC (Remote Fire)
+-- RAKNET DESYNC v2 (with delay & cue)
 -- ==========================================
 
 local function resetChar()
@@ -436,55 +443,80 @@ local function isAlive(player)
     return hum ~= nil and hum.Health > 0
 end
 
--- Fire all Activated/RightActivated/Hitbox remotes with target Humanoid
-local function fireAllRemotes(targetHum)
-    local services = ReplicatedStorage:FindFirstChild("Knit") and ReplicatedStorage.Knit:FindFirstChild("Knit") and ReplicatedStorage.Knit.Knit:FindFirstChild("Services")
-    if not services then return end
-
-    for _, svc in ipairs(services:GetChildren()) do
-        local re = svc:FindFirstChild("RE")
-        if re then
-            for _, child in ipairs(re:GetChildren()) do
-                if child:IsA("RemoteEvent") and (child.Name:match("Activated") or child.Name:match("RightActivated") or child.Name:match("Hitbox") or child.Name:match("Fire")) then
-                    pcall(function()
-                        child:FireServer(targetHum)
-                    end)
-                end
-            end
-        end
-    end
-end
-
-local function tpTo(hrp, tHRP, tHum)
+local function tpToRakNet(hrp, tHRP, tHum)
     local predicted = tHRP.Position + (tHum.MoveDirection * 0.8 * tHum.WalkSpeed)
     local dest = CFrame.new(predicted - tHRP.CFrame.LookVector * 5, predicted)
     local oldPos = hrp.Position
 
     if tpBypassOn then unantistuff() end
 
-    workspace.FallenPartsDestroyHeight = 100
-    hrp.CFrame = dest
+    -- Take network ownership
+    pcall(function() hrp:SetNetworkOwner(LocalPlayer) end)
 
+    -- Flood CFrame updates (increased to 8)
+    for i = 1, 8 do
+        hrp.CFrame = dest
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        task.wait() -- one frame each
+    end
+
+    -- Set velocity to match displacement (reduced to ×60)
     local disp = dest.Position - oldPos
     if disp.Magnitude > 0.5 then
         hrp.AssemblyLinearVelocity = disp * 60
     end
 
-    -- Fire all relevant remotes with target Humanoid
-    local targetHum = tHRP.Parent and tHRP.Parent:FindFirstChildOfClass("Humanoid")
-    if targetHum then
-        fireAllRemotes(targetHum)
-    end
+    -- Fire a harmless remote to force server round‑trip
+    pcall(function()
+        local remotes = ReplicatedStorage:FindFirstChild("Chat") or ReplicatedStorage:FindFirstChild("RemoteEvent")
+        if remotes then
+            for _, r in ipairs(remotes:GetDescendants()) do
+                if r:IsA("RemoteEvent") then
+                    r:FireServer()
+                    break
+                end
+            end
+        end
+    end)
 
+    -- Wait one frame for server to process
     RunService.Heartbeat:Wait()
 
+    -- Reinforce CFrame
+    hrp.CFrame = dest
+
+    -- Add a BodyPosition to lock the position for 50ms
+    local bp = Instance.new("BodyPosition")
+    bp.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+    bp.P = 5000
+    bp.D = 10000
+    bp.Position = dest.Position
+    bp.Parent = hrp
+
+    -- Display status: swing now!
+    setStatus("⚡  SWING NOW! (50ms hold)", Color3.fromRGB(255, 200, 100))
+
+    -- Wait 50ms for server to settle
+    task.wait(0.05)
+
+    -- Release hold and reset velocity
+    bp:Destroy()
     hrp.AssemblyLinearVelocity = Vector3.zero
     hrp.AssemblyLinearVelocity = Vector3.new(math.random(-1,1), 0, math.random(-1,1))
+
+    -- Release network ownership
+    pcall(function() hrp:SetNetworkOwner(nil) end)
+
     if tpBypassOn then
         task.wait(0.05)
         antistuff()
     end
     workspace.FallenPartsDestroyHeight = -150
+
+    -- Reset status after a moment
+    task.delay(0.2, function()
+        setStatus("●  Ready", Color3.fromRGB(100, 200, 100))
+    end)
 end
 
 local function getSortedPlayers()
@@ -510,7 +542,7 @@ local function getSortedPlayers()
 end
 
 -- ==========================================
--- TP Selected - Heartbeat loop
+-- TP Selected - Heartbeat loop (uses RakNet)
 -- ==========================================
 
 local tpSelOn = false
@@ -567,7 +599,7 @@ local function openPanel()
                     local tHRP = tChar:FindFirstChild("HumanoidRootPart")
                     local tHum = tChar:FindFirstChildOfClass("Humanoid")
                     if not tHRP or not tHum then return end
-                    tpTo(hrp, tHRP, tHum)
+                    tpToRakNet(hrp, tHRP, tHum)
                 end)
             end)
             count = count + 1
@@ -588,7 +620,7 @@ tpSelBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- TP All Loop - Heartbeat loop
+-- TP All Loop - Heartbeat loop (also uses RakNet)
 -- ==========================================
 
 local tpLoopOn = false
@@ -599,7 +631,7 @@ tpLoopBtn.MouseButton1Click:Connect(function()
     setTPLoopOn(tpLoopOn)
     if tpLoopOn then
         if not tpBypassOn then antistuff() end
-        setStatus("🔁  TP Loop ON (Simple)", Color3.fromRGB(255, 80, 80))
+        setStatus("🔁  TP Loop ON (RakNet)", Color3.fromRGB(255, 80, 80))
         if tpLoopConn then tpLoopConn:Disconnect(); tpLoopConn = nil end
 
         local index = 1
@@ -630,7 +662,7 @@ tpLoopBtn.MouseButton1Click:Connect(function()
                 local tHRP = tChar:FindFirstChild("HumanoidRootPart")
                 local tHum = tChar:FindFirstChildOfClass("Humanoid")
                 if tHRP and tHum then
-                    tpTo(hrp, tHRP, tHum)
+                    tpToRakNet(hrp, tHRP, tHum)
                     local tag = isAlive(target) and "[A]" or "[D]"
                     setStatus("🔁 " .. tag .. " " .. target.Name, Color3.fromRGB(255, 100, 100))
                 end
@@ -672,4 +704,4 @@ LocalPlayer.CharacterAdded:Connect(function()
     setStatus("● Respawned", Color3.fromRGB(100, 200, 100))
 end)
 
-print("TBO Tools loaded! (Simple Remote Fire)")
+print("TBO Tools loaded! (RakNet Desync v2 - with swing cue)")
